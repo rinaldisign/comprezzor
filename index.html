@@ -80,8 +80,8 @@ main{flex:1; display:flex; flex-direction:column; align-items:center; padding:26
 .stage{position:relative; user-select:none}
 .stage img, .stage canvas{display:block; max-height:80vh; max-width:100%; pointer-events:none}
 .canvasWrap:fullscreen .stage img, .canvasWrap:fullscreen .stage canvas{max-height:100vh}
-.clipLayer{position:absolute; top:0; left:0; height:100%; overflow:hidden}
-.clipLayer canvas{height:100%; width:auto; max-height:none; max-width:none}
+.clipLayer{position:absolute; top:0; right:0; height:100%; overflow:hidden}
+.clipLayer canvas{position:absolute; top:0; right:0; height:100%; width:auto; max-height:none; max-width:none}
 .handle{
   position:absolute; top:0; bottom:0; width:0; cursor:ew-resize; z-index:5;
 }
@@ -329,6 +329,7 @@ const clipLayer=document.getElementById("clipLayer"), handle=document.getElement
 const zoomLevelEl=document.getElementById("zoomLevel");
 const targetValue=document.getElementById("targetValue"), targetUnit=document.getElementById("targetUnit");
 const targetBtn=document.getElementById("targetBtn"), targetMsg=document.getElementById("targetMsg");
+const srcCanvas=document.createElement("canvas"); let renderTok=0;
 let origBytes=0, compBytes=0, imgEl=null, lastBlobUrl=null;
 let zoom=1, panX=0, panY=0, comparePct=50;
 
@@ -349,6 +350,7 @@ function handleFile(file){
       origImg.src=e.target.result;
       origSizeEl.textContent=fmtSize(origBytes);
       compCanvas.width=imgEl.naturalWidth; compCanvas.height=imgEl.naturalHeight;
+      srcCanvas.width=imgEl.naturalWidth; srcCanvas.height=imgEl.naturalHeight; srcCanvas.getContext("2d").drawImage(imgEl,0,0);
       dropzone.style.display="none"; workspace.style.display="flex";
       zoom=1; panX=0; panY=0; comparePct=50; targetMsg.textContent="";
       applyTransform(); updateClip();
@@ -361,19 +363,26 @@ function handleFile(file){
 
 function encode(format,quality){
   return new Promise(res=>{
-    compCanvas.toBlob(blob=>res(blob), format, format==="image/png" ? undefined : quality);
+    srcCanvas.toBlob(blob=>res(blob), format, format==="image/png" ? undefined : quality);
   });
 }
 
+async function showBlob(blob){
+  const bmp=await createImageBitmap(blob);
+  ctx.clearRect(0,0,compCanvas.width,compCanvas.height);
+  ctx.drawImage(bmp,0,0,compCanvas.width,compCanvas.height);
+  bmp.close&&bmp.close();
+}
 async function renderCompressed(){
   if(!imgEl) return;
-  ctx.clearRect(0,0,compCanvas.width,compCanvas.height);
-  ctx.drawImage(imgEl,0,0);
+  const tok=++renderTok;
   const format=formatSelect.value;
   const quality=Number(qualitySlider.value)/100;
   qualityCtrl.style.opacity = format==="image/png" ? .4 : 1;
   const blob=await encode(format,quality);
-  if(!blob) return;
+  if(!blob||tok!==renderTok) return;
+  await showBlob(blob);
+  if(tok!==renderTok) return;
   compBytes=blob.size;
   compSizeEl.textContent=fmtSize(compBytes);
   if(lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
@@ -391,7 +400,7 @@ function computeSavings(){
 
 // ---- compare slider ----
 function updateClip(){
-  clipLayer.style.width = comparePct + "%";
+  clipLayer.style.width = (100 - comparePct) + "%";
   handle.style.left = comparePct + "%";
 }
 function pctFromClientX(clientX){
@@ -438,9 +447,7 @@ async function compressToTarget(){
   if(format==="image/png"){ targetMsg.textContent=i18n[lang].targetPngErr; return; }
   const targetBytes = Number(targetValue.value) * Number(targetUnit.value);
   if(!targetBytes || !imgEl) return;
-  targetBtn.disabled=true;
-  ctx.clearRect(0,0,compCanvas.width,compCanvas.height);
-  ctx.drawImage(imgEl,0,0);
+  targetBtn.disabled=true; renderTok++;
   let lo=0.01, hi=1, bestQ=1, bestBlob=null, bestDiff=Infinity;
   for(let i=0;i<8;i++){
     const mid=(lo+hi)/2;
@@ -449,6 +456,7 @@ async function compressToTarget(){
     if(diff<bestDiff){ bestDiff=diff; bestQ=mid; bestBlob=blob; }
     if(blob.size>targetBytes) hi=mid; else lo=mid;
   }
+  await showBlob(bestBlob);
   compBytes=bestBlob.size;
   compSizeEl.textContent=fmtSize(compBytes);
   if(lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
