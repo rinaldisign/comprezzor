@@ -213,8 +213,13 @@ input::placeholder{color:#93aed0;opacity:.7}
     </select>
     <button class="btn" id="batchBtn" data-i18n="batchPick">Select folder &amp; compress all</button>
     <input type="file" id="batchInput" webkitdirectory directory multiple style="display:none">
+    <div id="batchFileWrap" style="display:none;flex-direction:column;gap:6px">
+      <div style="display:flex;justify-content:space-between;gap:10px;font-size:12px"><span id="batchFileName" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">-</span><b id="batchFilePct">0%</b></div>
+      <div style="height:6px;border-radius:6px;background:rgba(255,255,255,0.08);overflow:hidden"><div id="batchFileBar" style="height:100%;width:0;background:linear-gradient(90deg,#4fa3e3,#7fd1ff);transition:width .18s linear"></div></div>
+    </div>
     <div style="height:8px;border-radius:6px;background:rgba(255,255,255,0.08);overflow:hidden"><div id="batchBar" style="height:100%;width:0;background:var(--accent-glow,#4fa3e3);transition:width .2s"></div></div>
     <div class="targetMsg" id="batchMsg"></div>
+    <button class="btn secondary" id="batchReset" style="display:none" data-i18n="batchReset">Reset</button>
     <div id="batchLog" style="max-height:160px;overflow:auto;font-size:11.5px;color:var(--muted);font-family:monospace;white-space:pre-wrap"></div>
   </div>
 
@@ -289,7 +294,7 @@ const i18n = {
     dragHint:"Geser gagang untuk bandingkan · scroll untuk zoom",
     targetSize:"Ukuran target",compressTo:"Kompres ke target",
     targetDone:"Tercapai pada kualitas", targetClose:"Terdekat pada kualitas",
-    targetPngErr:"Ukuran target tidak berlaku untuk PNG (tidak ada kontrol kualitas).",fullscreen:"⛶ Layar penuh",batchTitle:"Proses folder (ukuran rata-rata per foto)",batchPick:"Pilih folder & kompres semua",batchDone:"Selesai",batchNoImg:"Tidak ada gambar di folder.",batchFmtKeep:"Output: format asli"},
+    targetPngErr:"Ukuran target tidak berlaku untuk PNG (tidak ada kontrol kualitas).",fullscreen:"⛶ Layar penuh",batchTitle:"Proses folder (ukuran rata-rata per foto)",batchPick:"Pilih folder & kompres semua",batchDone:"Selesai",batchNoImg:"Tidak ada gambar di folder.",batchFmtKeep:"Output: format asli",batchReset:"Reset"},
   en:{title:"Comprezzor",subtitle:"Compress images right in your browser — nothing uploaded.",
     dropTitle:"Drag an image here or click to select",dropSub:"Supports JPG, PNG, WebP",
     original:"Original",compressed:"Compressed",format:"Format",quality:"Quality",
@@ -297,7 +302,7 @@ const i18n = {
     dragHint:"Drag the handle to compare · scroll to zoom",
     targetSize:"Target size",compressTo:"Compress to target",
     targetDone:"Reached at quality", targetClose:"Closest at quality",
-    targetPngErr:"Target size doesn't apply to PNG (no quality control).",fullscreen:"⛶ Fullscreen",batchTitle:"Batch folder (target size per photo)",batchPick:"Select folder & compress all",batchDone:"Done",batchNoImg:"No images in folder.",batchFmtKeep:"Output: original format"},
+    targetPngErr:"Target size doesn't apply to PNG (no quality control).",fullscreen:"⛶ Fullscreen",batchTitle:"Batch folder (target size per photo)",batchPick:"Select folder & compress all",batchDone:"Done",batchNoImg:"No images in folder.",batchFmtKeep:"Output: original format",batchReset:"Reset"},
   ja:{title:"Comprezzor",subtitle:"ブラウザ上で画像を圧縮。サーバーへのアップロードなし。",
     dropTitle:"画像をここにドラッグ、またはクリックして選択",dropSub:"JPG、PNG、WebP に対応",
     original:"元の画像",compressed:"圧縮後",format:"形式",quality:"品質",
@@ -305,7 +310,7 @@ const i18n = {
     dragHint:"ハンドルをドラッグして比較 · スクロールでズーム",
     targetSize:"目標サイズ",compressTo:"目標に圧縮",
     targetDone:"到達した品質", targetClose:"最も近い品質",
-    targetPngErr:"PNGには目標サイズは適用できません（品質設定なし）。",fullscreen:"⛶ フルスクリーン",batchTitle:"フォルダ一括処理（1枚あたりの目標サイズ）",batchPick:"フォルダを選択して全て圧縮",batchDone:"完了",batchNoImg:"フォルダに画像がありません。",batchFmtKeep:"出力: 元の形式"}
+    targetPngErr:"PNGには目標サイズは適用できません（品質設定なし）。",fullscreen:"⛶ フルスクリーン",batchTitle:"フォルダ一括処理（1枚あたりの目標サイズ）",batchPick:"フォルダを選択して全て圧縮",batchDone:"完了",batchNoImg:"フォルダに画像がありません。",batchFmtKeep:"出力: 元の形式",batchReset:"リセット"}
 };
 let lang = "en";
 function applyI18n(){
@@ -484,8 +489,15 @@ document.getElementById("resetBtn").addEventListener("click",()=>{
 
 // ---- batch folder -> zip ----
 const batchInput=document.getElementById("batchInput"), batchBtn=document.getElementById("batchBtn");
+const batchFileWrap=document.getElementById("batchFileWrap"), batchFileName=document.getElementById("batchFileName"), batchFilePct=document.getElementById("batchFilePct"), batchFileBar=document.getElementById("batchFileBar"), batchReset=document.getElementById("batchReset");
 const batchBar=document.getElementById("batchBar"), batchMsg=document.getElementById("batchMsg"), batchLog=document.getElementById("batchLog");
 batchBtn.addEventListener("click",()=>batchInput.click());
+function setFileProg(p){ const v=Math.round(p*100); batchFileBar.style.width=v+"%"; batchFilePct.textContent=v+"%"; }
+batchReset.addEventListener("click",()=>{
+  batchLog.textContent=""; batchMsg.textContent=""; batchBar.style.width="0"; setFileProg(0);
+  batchFileWrap.style.display="none"; batchReset.style.display="none"; batchBtn.disabled=false;
+});
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 batchInput.addEventListener("change",e=>{ const fs=[...e.target.files]; e.target.value=""; if(fs.length) runBatch(fs); });
 
 const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
@@ -522,23 +534,26 @@ function drawScaled(bmp,scale){
   x.imageSmoothingQuality="high"; x.drawImage(bmp,0,0,c.width,c.height); return c;
 }
 // cari kualitas tertinggi yang masih <= target; jika kualitas min masih terlalu besar, kecilkan dimensi
-async function fitToTarget(bmp,type,target){
-  const MINQ=0.5; let scale=1;
+async function fitToTarget(bmp,type,target,cb){
+  cb=cb||(()=>{}); const MINQ=0.5, ITERS=type==="image/webp"?5:7, TOTAL=2+ITERS; let scale=1,k=0;
+  const tick=()=>cb(Math.min(0.97,0.1+0.87*(++k)/TOTAL));
+  const enc=async(c,q)=>{const b=await canvasBlob(c,type,q); tick(); return b;};
   for(let round=0;round<8;round++){
     const c=drawScaled(bmp,scale);
     let lo=MINQ, hi=0.95, best=null;
-    const top=await canvasBlob(c,type,hi);
+    const top=await enc(c,hi);
     if(top&&top.size<=target) return top;
-    const bot=await canvasBlob(c,type,lo);
+    const bot=await enc(c,lo);
     if(bot&&bot.size<=target){
       best=bot;
-      for(let i=0;i<7;i++){
-        const mid=(lo+hi)/2, b=await canvasBlob(c,type,mid);
+      for(let i=0;i<ITERS;i++){
+        const mid=(lo+hi)/2, b=await enc(c,mid);
         if(b.size<=target){best=b;lo=mid;} else hi=mid;
       }
       return best;
     }
     scale*=Math.max(0.5,Math.min(0.95,Math.sqrt(target/bot.size)*0.97));
+    k=Math.min(k,TOTAL-2);
   }
   return canvasBlob(drawScaled(bmp,scale),type,MINQ);
 }
@@ -548,13 +563,15 @@ async function runBatch(files){
   const imgs=files.filter(f=>/^image\/(jpeg|png|webp)$/.test(f.type)||/\.(jpe?g|png|webp)$/i.test(f.name));
   if(!imgs.length){batchMsg.textContent=T.batchNoImg;return;}
   const target=Number(document.getElementById("batchValue").value)*Number(document.getElementById("batchUnit").value);
-  batchBtn.disabled=true; batchLog.textContent=""; batchBar.style.width="0";
+  batchBtn.disabled=true; batchReset.style.display="none"; batchLog.textContent=""; batchBar.style.width="0"; batchFileWrap.style.display="flex"; setFileProg(0);
   const entries=[], used=new Set(); let inB=0,outB=0;
   const root=(imgs[0].webkitRelativePath||"").split("/")[0]||"compressed";
   for(let i=0;i<imgs.length;i++){
     const f=imgs[i]; let rel=f.webkitRelativePath||f.name;
     rel=rel.split("/").slice(1).join("/")||f.name;
     let out=f, line="";
+    batchFileName.textContent=`(${i+1}/${imgs.length}) ${rel}`; batchFileBar.style.transition="none"; setFileProg(0); await sleep(30); batchFileBar.style.transition="";
+    const prog=p=>{ setFileProg(p); batchBar.style.width=((i+p)/imgs.length*100)+"%"; };
     try{
       const isWebp=/webp/i.test(f.type)||/\.webp$/i.test(f.name);
       const fmt=document.getElementById("batchFormat").value;
@@ -562,8 +579,8 @@ async function runBatch(files){
       const sameType=(type==="image/webp")===isWebp && (type==="image/webp"||/jpe?g/i.test(f.type+f.name));
       const forced=fmt!=="keep" && !sameType;
       if(f.size>target||forced){
-        const bmp=await createImageBitmap(f);
-        const b=await fitToTarget(bmp,type,target); bmp.close&&bmp.close();
+        prog(0.05); const bmp=await createImageBitmap(f);
+        const b=await fitToTarget(bmp,type,target,prog); bmp.close&&bmp.close();
         if(b&&(forced||b.size<f.size)){ out=b; rel=rel.replace(/\.[^.]+$/,"")+(type==="image/webp"?".webp":".jpg"); }
       }
       line=`${rel}  ${fmtSize(f.size)} → ${fmtSize(out.size)}`;
@@ -572,6 +589,7 @@ async function runBatch(files){
     used.add(name.toLowerCase());
     entries.push({name,data:new Uint8Array(await out.arrayBuffer())});
     inB+=f.size; outB+=out.size;
+    prog(1); await sleep(160);
     batchLog.textContent+=line+"\n"; batchLog.scrollTop=batchLog.scrollHeight;
     batchBar.style.width=((i+1)/imgs.length*100)+"%";
     batchMsg.textContent=`${i+1}/${imgs.length}`;
@@ -580,7 +598,7 @@ async function runBatch(files){
   a.href=URL.createObjectURL(zip); a.download=root+"-compressed.zip"; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),60000);
   batchMsg.textContent=`${T.batchDone}: ${imgs.length} · ${fmtSize(inB)} → ${fmtSize(outB)}`;
-  batchBtn.disabled=false;
+  batchBtn.disabled=false; batchReset.style.display="block";
 }
 
 applyI18n();
